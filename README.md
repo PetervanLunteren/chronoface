@@ -3,7 +3,7 @@
 Chronoface scans an unsorted folder of photos, detects faces with open source CPU models, clusters
 people within time buckets, lets you review every detection, and exports printable collages — all on
 your machine.
-
+ 
 ![Chronoface interface placeholder](docs/screenshots/placeholder_scan.png)
 
 ## Features
