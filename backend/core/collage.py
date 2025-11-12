@@ -71,6 +71,8 @@ def render_collage(
     output_format: str = "A4",
     corner_radius: int = 0,
     show_labels: bool = True,
+    title: str | None = None,
+    label_format: str = "all",
 ) -> Tuple[Path, Path, int, int]:
     faces_list = _sorted_faces(faces, photos, sort_mode, seed=f"{run_id}:{bucket}:{sort_mode}")
     faces_list = faces_list[:max_faces]
@@ -96,6 +98,47 @@ def render_collage(
     mode = "RGBA" if corner_radius > 0 else "RGB"
     canvas = Image.new(mode, (width, height), background)
 
+    # Calculate title height and draw title if provided
+    title_offset = 0
+    if title:
+        draw = ImageDraw.Draw(canvas, mode)
+
+        # Calculate font size based on canvas width (larger canvas = larger title)
+        font_size = max(48, int(width * 0.04))  # 4% of width, minimum 48px
+
+        # Try monospace fonts
+        font_paths = [
+            "/System/Library/Fonts/SFNSMono.ttf",  # SF Mono (macOS)
+            "/System/Library/Fonts/Monaco.ttf",  # Monaco
+            "/System/Library/Fonts/Courier New.ttf",  # Courier New
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",  # Linux fallback
+        ]
+        font = None
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except:
+                continue
+        if font is None:
+            font = ImageFont.load_default()
+
+        # Get text bounding box
+        bbox = draw.textbbox((0, 0), title, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+
+        # Center the title horizontally, place near top
+        title_x = (width - text_width) // 2
+        title_y = margin
+
+        # Draw the title
+        text_color = "black" if background in ["white", "#ffffff", "rgb(255, 255, 255)"] else "white"
+        draw.text((title_x, title_y), title, font=font, fill=text_color)
+
+        # Offset the faces grid down by title height + spacing
+        title_offset = text_height + margin
+
     # Calculate how many tiles are in the last row
     total_faces = len(faces_list)
     full_rows = total_faces // columns
@@ -114,7 +157,7 @@ def render_collage(
         else:
             x = margin + col * (tile_size + padding_x)
 
-        y = margin + row * (tile_size + padding_y)
+        y = margin + title_offset + row * (tile_size + padding_y)
 
         with Image.open(face.thumb_path) as thumb_img:
             tile = ImageOps.fit(thumb_img, (tile_size, tile_size), Image.Resampling.LANCZOS)
@@ -130,8 +173,24 @@ def render_collage(
         if show_labels:
             photo = photos.get(face.photo_id)
             if photo:
-                # Format the date
-                date_str = photo.timestamp.strftime("%b %d, %Y")
+                # Format the date based on label_format
+                if label_format == "day":
+                    # Day: Show full date (current format)
+                    date_str = photo.timestamp.strftime("%b %d, %Y")
+                elif label_format == "week":
+                    # Week: Show "Week N, YYYY"
+                    week_num = photo.timestamp.isocalendar()[1]
+                    year = photo.timestamp.year
+                    date_str = f"Week {week_num}, {year}"
+                elif label_format == "month":
+                    # Month: Show "Mon, YYYY"
+                    date_str = photo.timestamp.strftime("%b, %Y")
+                elif label_format == "year":
+                    # Year: Show "YYYY"
+                    date_str = photo.timestamp.strftime("%Y")
+                else:
+                    # All/other: Show full date (current format)
+                    date_str = photo.timestamp.strftime("%b %d, %Y")
 
                 # Create a drawing context
                 draw = ImageDraw.Draw(canvas, mode)
@@ -139,12 +198,12 @@ def render_collage(
                 # Scale font size with tile size (larger tiles = larger font)
                 try:
                     font_size = max(16, tile_size // 15)  # Normal size: //15
-                    # Try multiple font paths
+                    # Try monospace fonts
                     font_paths = [
-                        "/System/Library/Fonts/SFNS.ttf",
-                        "/System/Library/Fonts/SFCompact.ttf",
-                        "/System/Library/Fonts/Helvetica.ttc",
-                        "/System/Library/Fonts/Supplemental/Arial.ttf",
+                        "/System/Library/Fonts/SFNSMono.ttf",  # SF Mono (macOS)
+                        "/System/Library/Fonts/Monaco.ttf",  # Monaco
+                        "/System/Library/Fonts/Courier New.ttf",  # Courier New
+                        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",  # Linux fallback
                     ]
                     font = None
                     for font_path in font_paths:

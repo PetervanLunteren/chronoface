@@ -427,6 +427,8 @@ class RunManager:
             output_format=request.output_format,
             corner_radius=request.corner_radius,
             show_labels=request.show_labels,
+            title=request.title,
+            label_format=request.label_format,
         )
         return {
             "output_path": str(output_path.resolve()),

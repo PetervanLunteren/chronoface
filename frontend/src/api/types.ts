@@ -94,6 +94,8 @@ export interface CollageRequest {
   face_ids?: string[]; // Optional: specific face IDs to include
   corner_radius?: number;
   show_labels?: boolean;
+  title?: string; // Optional: title text to display at top
+  label_format?: "day" | "week" | "month" | "year" | "all"; // Format for date labels
   output_format?: "A5" | "A4" | "A3";
 }
 

@@ -128,6 +128,8 @@ class CollageRequest(BaseModel):
     face_ids: List[str] = Field(default_factory=list)  # Optional: specific face IDs to include
     corner_radius: int = Field(default=0, ge=0, le=200)
     show_labels: bool = Field(default=True)
+    title: str | None = Field(default=None)  # Optional: title text to display at top
+    label_format: Literal["day", "week", "month", "year", "all"] = Field(default="all")  # Format for date labels
     output_format: Literal["A5", "A4", "A3"] = Field(default="A4")
 
 

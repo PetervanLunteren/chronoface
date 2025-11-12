@@ -18,14 +18,17 @@ function Collage() {
   const outputFormat = "A4"; // Fixed for now, will be configurable later
   const [roundedCorners, setRoundedCorners] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [showTitle, setShowTitle] = useState(false);
+  const [titleText, setTitleText] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Get the face selections from Arrange step (or fall back to Review step selections)
-  const { selectedFaceIds, bucketFaceSelections } = useRunStore((state) => ({
+  const { selectedFaceIds, bucketFaceSelections, selectedBucketType } = useRunStore((state) => ({
     selectedFaceIds: state.selectedFaceIds,
-    bucketFaceSelections: state.bucketFaceSelections
+    bucketFaceSelections: state.bucketFaceSelections,
+    selectedBucketType: state.selectedBucketType
   }));
 
   // Use faces selected in Arrange step if available, otherwise use all selected faces from Review
@@ -49,14 +52,23 @@ function Collage() {
       A3: [3508, 4961],
     };
 
-    const [paperWidth, paperHeight] = paperDimensions[outputFormat];
+    let [paperWidth, paperHeight] = paperDimensions[outputFormat];
+
+    // If title is enabled, reduce available height for faces
+    // Title takes approximately: font_size + margin*2 (top and bottom spacing)
+    // Font size is 4% of width, so estimate title block height as ~6% of width
+    if (showTitle && titleText.trim()) {
+      const estimatedTitleHeight = Math.floor(paperWidth * 0.06) + 32; // title + spacing
+      paperHeight -= estimatedTitleHeight;
+    }
 
     // Step 1: Find optimal column count and calculate tile size + padding together
     // We'll use margin = padding, so we need to account for that in available space
-    let bestLayout = { columns: 3, tileSize: 0, paddingX: 0, paddingY: 0, margin: 32 };
+    let bestLayout = { columns: 1, tileSize: 0, paddingX: 0, paddingY: 0, margin: 32 };
 
     const maxCols = Math.min(12, numFaces);
-    for (let cols = 3; cols <= maxCols; cols++) {
+    const minCols = Math.min(1, numFaces);
+    for (let cols = minCols; cols <= maxCols; cols++) {
       const rows = Math.ceil(numFaces / cols);
 
       // We want margin to equal padding, so:
@@ -98,9 +110,14 @@ function Collage() {
         margin
       });
 
-      if (tileSize > bestLayout.tileSize && tileSize >= 150) {
+      if (tileSize > bestLayout.tileSize && tileSize >= 32) {
         bestLayout = { columns: cols, tileSize, paddingX, paddingY, margin };
       }
+    }
+
+    // If no valid layout was found (shouldn't happen), use a safe default
+    if (bestLayout.tileSize === 0) {
+      bestLayout = { columns: Math.min(3, numFaces), tileSize: 200, paddingX: 32, paddingY: 32, margin: 32 };
     }
 
     const finalColumns = bestLayout.columns;
@@ -129,9 +146,10 @@ function Collage() {
       paddingY: verticalPadding,
       margin: finalMargin,
     };
-  }, [numAcceptedFaces, outputFormat]);
+  }, [numAcceptedFaces, outputFormat, showTitle, titleText]);
 
-  // Use "all" to include all faces, not filtered by bucket
+  // Always use "all" for face filtering (not limited by bucket)
+  // We'll use selectedBucketType only for date label formatting
   const bucket = "all";
 
   const request = useMemo((): CollageRequest | null => {
@@ -140,7 +158,7 @@ function Collage() {
     // Calculate corner radius as 10% of tile size if enabled, otherwise 0
     const cornerRadius = roundedCorners ? Math.round(tileSize * 0.1) : 0;
 
-    return {
+    const baseRequest = {
       run_id: runId,
       bucket: bucket,
       tile_size: tileSize,
@@ -152,12 +170,18 @@ function Collage() {
       sort: "by_time",
       max_faces: 365,
       face_selection: "accepted_only",
-      face_ids: facesToUse.length > 0 ? facesToUse : undefined, // Pass specific face IDs if available
       corner_radius: cornerRadius,
       show_labels: showLabels,
-      output_format: outputFormat
+      output_format: outputFormat,
+      title: showTitle ? titleText : undefined,
+      label_format: selectedBucketType || "all"
     };
-  }, [runId, bucket, tileSize, columns, paddingX, paddingY, margin, roundedCorners, showLabels, outputFormat, facesToUse]);
+
+    // Only include face_ids if we have specific faces selected
+    return facesToUse.length > 0
+      ? { ...baseRequest, face_ids: facesToUse }
+      : baseRequest;
+  }, [runId, bucket, tileSize, columns, paddingX, paddingY, margin, roundedCorners, showLabels, outputFormat, facesToUse, showTitle, titleText, selectedBucketType]);
 
   // Auto-generate preview when settings change - DISABLED for performance
   // useEffect(() => {
@@ -242,19 +266,59 @@ function Collage() {
                     />
                   </button>
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-slate-300">Show title</label>
+                  <button
+                    onClick={() => setShowTitle(!showTitle)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      showTitle ? "bg-primary" : "bg-slate-700"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        showTitle ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {showTitle && (
+                  <div>
+                    <label className="text-sm text-slate-300 mb-2 block">Title text</label>
+                    <input
+                      type="text"
+                      value={titleText}
+                      onChange={(e) => setTitleText(e.target.value)}
+                      placeholder="Enter title..."
+                      className="w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 space-y-3">
                 <button
                   onClick={async () => {
                     if (!request) return;
+                    console.log('Collage request:', JSON.stringify(request, null, 2));
                     setIsGenerating(true);
                     try {
                       const result = await createCollage(request);
                       setPreviewUrl(result.static_url ?? null);
                       setDimensions({ width: result.width, height: result.height });
-                    } catch {
-                      pushToast({ title: "Preview failed", variant: "error" });
+                    } catch (error) {
+                      console.error('Collage error:', error);
+                      const errorMsg = error instanceof Error ? error.message : String(error);
+                      if (errorMsg.includes("'") && errorMsg.length < 100) {
+                        pushToast({
+                          title: "Session expired",
+                          description: "Please start over from step 1",
+                          variant: "error"
+                        });
+                      } else {
+                        pushToast({ title: "Preview failed", variant: "error" });
+                      }
                     } finally {
                       setIsGenerating(false);
                     }
