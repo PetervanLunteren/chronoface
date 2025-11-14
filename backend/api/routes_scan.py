@@ -27,8 +27,61 @@ async def upload_and_scan(files: List[UploadFile] = File(...)) -> ScanResponse:
 
     logger.info(f"Received {len(files)} files for upload")
 
+    # Clean up old temp directories from previous sessions
+    uploads_root = Path(tempfile.gettempdir()) / "chronoface_uploads"
+    if uploads_root.exists():
+        for old_dir in uploads_root.iterdir():
+            if old_dir.is_dir():
+                try:
+                    shutil.rmtree(old_dir)
+                    logger.info(f"Cleaned up old temp directory: {old_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up {old_dir}: {e}")
+
+    # Also clean up old thumbnails and face images from output/static
+    from ..core.config import get_settings
+    settings = get_settings()
+
+    thumbs_dir = settings.static_dir / "thumbs"
+    if thumbs_dir.exists():
+        try:
+            shutil.rmtree(thumbs_dir)
+            thumbs_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Cleaned up old photo thumbnails")
+        except Exception as e:
+            logger.warning(f"Failed to clean up thumbnails: {e}")
+
+    faces_dir = settings.static_dir / "faces"
+    if faces_dir.exists():
+        try:
+            shutil.rmtree(faces_dir)
+            faces_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Cleaned up old face thumbnails")
+        except Exception as e:
+            logger.warning(f"Failed to clean up faces: {e}")
+
+    collages_dir = settings.static_dir / "collages"
+    if collages_dir.exists():
+        try:
+            shutil.rmtree(collages_dir)
+            collages_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Cleaned up old collages")
+        except Exception as e:
+            logger.warning(f"Failed to clean up collages: {e}")
+
+    # Clean up old collage outputs from previous sessions
+    if settings.output_dir.exists():
+        for old_run_dir in settings.output_dir.iterdir():
+            # Skip the static directory, only delete run directories
+            if old_run_dir.is_dir() and old_run_dir.name != "static":
+                try:
+                    shutil.rmtree(old_run_dir)
+                    logger.info(f"Cleaned up old collage output: {old_run_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up {old_run_dir}: {e}")
+
     # Create a temporary directory for this upload session
-    temp_dir = Path(tempfile.gettempdir()) / "chronoface_uploads" / str(uuid.uuid4())
+    temp_dir = uploads_root / str(uuid.uuid4())
     temp_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Created temp directory: {temp_dir}")
 

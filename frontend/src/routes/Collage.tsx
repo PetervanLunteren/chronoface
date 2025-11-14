@@ -55,10 +55,10 @@ function Collage() {
     let [paperWidth, paperHeight] = paperDimensions[outputFormat];
 
     // If title is enabled, reduce available height for faces
-    // Title takes approximately: font_size + margin*2 (top and bottom spacing)
-    // Font size is 4% of width, so estimate title block height as ~6% of width
+    // Title takes approximately: font_size + margin*3 (top margin + 2x bottom spacing)
+    // Font size is 4% of width, so estimate title block height as ~6% of width + extra margin
     if (showTitle && titleText.trim()) {
-      const estimatedTitleHeight = Math.floor(paperWidth * 0.06) + 32; // title + spacing
+      const estimatedTitleHeight = Math.floor(paperWidth * 0.06) + 64; // title + extra spacing
       paperHeight -= estimatedTitleHeight;
     }
 
@@ -204,15 +204,40 @@ function Collage() {
   const handleGenerate = async () => {
     if (!request) return;
 
+    // Use high-quality mode for final collage (no preview flag)
+    const finalRequest = { ...request, preview: false };
+
     setIsGenerating(true);
     try {
-      const result = await createCollage(request);
+      const result = await createCollage(finalRequest);
       setPreviewUrl(result.static_url ?? null);
       setDimensions({ width: result.width, height: result.height });
-      pushToast({
-        title: "Collage generated!",
-        description: `Saved to ${result.output_path}`
-      });
+
+      // Download the collage image
+      if (result.static_url) {
+        const response = await fetch(result.static_url);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        // Generate a suggested filename based on title or date
+        const timestamp = new Date().toISOString().split('T')[0];
+        const suggestedName = showTitle && titleText.trim()
+          ? `${titleText.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.jpg`
+          : `chronoface_collage_${timestamp}.jpg`;
+
+        a.download = suggestedName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        pushToast({
+          title: "Collage downloaded!",
+          description: "Check your downloads folder"
+        });
+      }
     } catch (error) {
       pushToast({ title: "Generation failed", description: String(error), variant: "error" });
     } finally {
@@ -301,10 +326,12 @@ function Collage() {
                 <button
                   onClick={async () => {
                     if (!request) return;
-                    console.log('Collage request:', JSON.stringify(request, null, 2));
+                    // Use preview mode for faster generation with low-quality thumbnails
+                    const previewRequest = { ...request, preview: true };
+                    console.log('Collage request:', JSON.stringify(previewRequest, null, 2));
                     setIsGenerating(true);
                     try {
-                      const result = await createCollage(request);
+                      const result = await createCollage(previewRequest);
                       setPreviewUrl(result.static_url ?? null);
                       setDimensions({ width: result.width, height: result.height });
                     } catch (error) {

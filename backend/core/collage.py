@@ -73,6 +73,7 @@ def render_collage(
     show_labels: bool = True,
     title: str | None = None,
     label_format: str = "all",
+    preview: bool = False,
 ) -> Tuple[Path, Path, int, int]:
     faces_list = _sorted_faces(faces, photos, sort_mode, seed=f"{run_id}:{bucket}:{sort_mode}")
     faces_list = faces_list[:max_faces]
@@ -136,8 +137,8 @@ def render_collage(
         text_color = "black" if background in ["white", "#ffffff", "rgb(255, 255, 255)"] else "white"
         draw.text((title_x, title_y), title, font=font, fill=text_color)
 
-        # Offset the faces grid down by title height + spacing
-        title_offset = text_height + margin
+        # Offset the faces grid down by title height + extra spacing (2x margin for more whitespace)
+        title_offset = text_height + margin * 2
 
     # Calculate how many tiles are in the last row
     total_faces = len(faces_list)
@@ -159,15 +160,52 @@ def render_collage(
 
         y = margin + title_offset + row * (tile_size + padding_y)
 
-        with Image.open(face.thumb_path) as thumb_img:
-            tile = ImageOps.fit(thumb_img, (tile_size, tile_size), Image.Resampling.LANCZOS)
+        # Load face image: use thumbnail for preview, original for final
+        if preview:
+            # Preview mode: use existing low-quality thumbnail for speed
+            face_img = Image.open(face.thumb_path)
+            tile = ImageOps.fit(face_img, (tile_size, tile_size), Image.Resampling.LANCZOS)
+        else:
+            # Final mode: load ORIGINAL image and crop the face from it for high quality
+            photo = photos.get(face.photo_id)
+            if photo:
+                from loguru import logger
+                from .imageio import load_image, crop_face
 
-            # Apply rounded corners if specified
-            if corner_radius > 0:
-                tile = _add_rounded_corners(tile, corner_radius)
-                canvas.paste(tile, (x, y), tile)  # Use tile as mask for transparency
+                # Load original high-quality image
+                original_img = load_image(photo.path)
+
+                # The bbox was detected on a downscaled image (max_edge=1600), so we need to scale it up
+                # to match the original image size
+                max_edge = 1600  # This was the detection size (from ScanRequest params)
+                orig_w, orig_h = original_img.size
+                scale_factor = max(orig_w, orig_h) / max_edge if max(orig_w, orig_h) > max_edge else 1.0
+
+                # Scale the bbox coordinates to the original image size
+                bbox_x, bbox_y, bbox_w, bbox_h = face.bbox
+                scaled_bbox = (
+                    int(bbox_x * scale_factor),
+                    int(bbox_y * scale_factor),
+                    int(bbox_w * scale_factor),
+                    int(bbox_h * scale_factor)
+                )
+
+                logger.info(f"Original size: {original_img.size}, Detection bbox: {face.bbox}, Scaled bbox: {scaled_bbox}, Scale: {scale_factor:.2f}")
+
+                # Crop the face region from the original using the scaled bbox
+                face_crop = crop_face(original_img, scaled_bbox, margin=0.25)
+
+                # Resize to tile size with high quality
+                tile = ImageOps.fit(face_crop, (tile_size, tile_size), Image.Resampling.LANCZOS)
             else:
-                canvas.paste(tile, (x, y))
+                continue  # Skip if photo not found
+
+        # Apply rounded corners if specified
+        if corner_radius > 0:
+            tile = _add_rounded_corners(tile, corner_radius)
+            canvas.paste(tile, (x, y), tile)  # Use tile as mask for transparency
+        else:
+            canvas.paste(tile, (x, y))
 
         # Add date label below the image if requested
         if show_labels:
@@ -229,15 +267,21 @@ def render_collage(
                 # Draw text in dark gray/black (no background needed since it's on white)
                 draw.text((text_x, text_y), date_str, fill=(80, 80, 80), font=font)
 
+    # Convert RGBA to RGB for JPEG export (composite rounded corners onto background)
+    if mode == "RGBA":
+        rgb_canvas = Image.new("RGB", canvas.size, background)
+        rgb_canvas.paste(canvas, (0, 0), canvas)  # Use canvas as alpha mask
+        canvas = rgb_canvas
+
     settings = get_settings()
     output_dir = settings.output_dir / run_id
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"chronoface_collage_{bucket}_{timestamp}.png"
+    filename = f"chronoface_collage_{bucket}_{timestamp}.jpg"
     output_path = output_dir / filename
-    canvas.save(output_path, format="PNG")
+    canvas.save(output_path, format="JPEG", quality=95)
     static_dir = settings.static_dir / "collages"
     static_dir.mkdir(parents=True, exist_ok=True)
     static_path = static_dir / filename
-    canvas.save(static_path, format="PNG")
+    canvas.save(static_path, format="JPEG", quality=95)
     return output_path, static_path, width, height

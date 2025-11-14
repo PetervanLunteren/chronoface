@@ -97,6 +97,7 @@ export interface CollageRequest {
   title?: string; // Optional: title text to display at top
   label_format?: "day" | "week" | "month" | "year" | "all"; // Format for date labels
   output_format?: "A5" | "A4" | "A3";
+  preview?: boolean; // If true, use low-quality thumbnails for faster preview
 }
 
 export interface CollageResponse {

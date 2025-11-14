@@ -131,6 +131,7 @@ class CollageRequest(BaseModel):
     title: str | None = Field(default=None)  # Optional: title text to display at top
     label_format: Literal["day", "week", "month", "year", "all"] = Field(default="all")  # Format for date labels
     output_format: Literal["A5", "A4", "A3"] = Field(default="A4")
+    preview: bool = Field(default=False)  # If True, use low-quality thumbnails for faster preview
 
 
 class CollageResponse(BaseModel):

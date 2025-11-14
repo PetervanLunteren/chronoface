@@ -117,11 +117,11 @@ function Arrange() {
     return bucketsArray;
   }, [faces, selectedBucketType, bucketFaceSelections]);
 
-  // Initialize selections for buckets with multiple faces
+  // Initialize selections for ALL buckets (including single-face buckets)
   useEffect(() => {
     const initialSelections: Record<string, string> = {};
     bucketsWithFaces.forEach(bucket => {
-      if (bucket.faces.length > 1 && !bucketFaceSelections[bucket.key]) {
+      if (!bucketFaceSelections[bucket.key] && bucket.faces.length > 0) {
         initialSelections[bucket.key] = bucket.faces[0].face_id;
       }
     });
