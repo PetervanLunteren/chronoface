@@ -29,3 +29,6 @@ output/
 .chronoface_cache/
 backend/models/*.onnx
 backend/models/*.onnx.sha256
+
+# Previous projects
+previous_projects/*
